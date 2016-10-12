@@ -1,8 +1,8 @@
-======================
 Simple Password Store
+======================
+
 by Jason Donenfeld
    Jason@zx2c4.com
-======================
 
 This is a very simple password store that encrypts passwords using gpg and
 places the encrypted password in a directory. It can generate new passwords
@@ -19,8 +19,9 @@ Depends on:
   http://www.gnupg.org/
 - git
   http://www.git-scm.com/
-- xclip
-  http://sourceforge.net/projects/xclip/
+- ~~xclip~~ xsel
+  ~~http://sourceforge.net/projects/xclip/~~
+  https://github.com/kfish/xsel
 - pwgen
   http://sourceforge.net/projects/pwgen/
 - tree >= 1.7.0

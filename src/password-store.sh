@@ -13,7 +13,6 @@ which gpg2 &>/dev/null && GPG="gpg2"
 [[ -n $GPG_AGENT_INFO || $GPG == "gpg2" ]] && GPG_OPTS+=( "--batch" "--use-agent" )
 
 PREFIX="${PASSWORD_STORE_DIR:-$HOME/.password-store}"
-X_SELECTION="${PASSWORD_STORE_X_SELECTION:-clipboard}"
 CLIP_TIME="${PASSWORD_STORE_CLIP_TIME:-45}"
 GENERATED_LENGTH="${PASSWORD_STORE_GENERATED_LENGTH:-25}"
 
@@ -134,23 +133,13 @@ clip() {
 	# trailing new lines.
 	local sleep_argv0="password store sleep on display $DISPLAY"
 	pkill -f "^$sleep_argv0" 2>/dev/null && sleep 0.5
-	local before="$(xclip -o -selection "$X_SELECTION" 2>/dev/null | base64)"
-	echo -n "$1" | xclip -selection "$X_SELECTION" || die "Error: Could not copy data to the clipboard"
+	local before="$(xsel -o 2>/dev/null | base64)"
+	echo -n "$1" | xsel -i || die "Error: Could not copy data to the clipboard"
 	(
 		( exec -a "$sleep_argv0" sleep "$CLIP_TIME" )
-		local now="$(xclip -o -selection "$X_SELECTION" | base64)"
+		local now="$(xsel -o | base64)"
 		[[ $now != $(echo -n "$1" | base64) ]] && before="$now"
-
-		# It might be nice to programatically check to see if klipper exists,
-		# as well as checking for other common clipboard managers. But for now,
-		# this works fine -- if qdbus isn't there or if klipper isn't running,
-		# this essentially becomes a no-op.
-		#
-		# Clipboard managers frequently write their history out in plaintext,
-		# so we axe it here:
-		qdbus org.kde.klipper /klipper org.kde.klipper.klipper.clearClipboardHistory &>/dev/null
-
-		echo "$before" | base64 -d | xclip -selection "$X_SELECTION"
+		echo "$before" | base64 -d | xsel -i
 	) 2>/dev/null & disown
 	echo "Copied $2 to clipboard. Will clear in $CLIP_TIME seconds."
 }
