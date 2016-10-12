@@ -20,14 +20,17 @@
 #
 #$ ./lastpass2pass.rb path/to/passwords_file.csv
 
-# Parse flags
+require 'erb'
+require 'smarter_csv'
 require 'optparse'
+
+# Parse flags
 optparse = OptionParser.new do |opts|
   opts.banner = "Usage: #{$0} [options] filename"
 
   FORCE = false
   opts.on("-f", "--force", "Overwrite existing records") { FORCE = true }
-  DEFAULT_GROUP = ""
+  DEFAULT_GROUP = "(none)"
   opts.on("-d", "--default GROUP", "Place uncategorised records into GROUP") { |group| DEFAULT_GROUP = group }
   opts.on("-h", "--help", "Display this screen") { puts opts; exit }
 
@@ -45,77 +48,76 @@ filename = ARGV.join(" ")
 puts "Reading '#{filename}'..."
 
 
+TEMPLATE = <<-EOT
+<%= @password %>
+<% if @username -%>
+login: <%= @username %>
+<% end -%>
+<% if @url == "http://sn" -%>
+type: note
+<% elsif @url -%>
+url: <%= @url %>
+<% end -%>
+desc: <%= @grouping + ' / ' if @grouping %><%= @name %>
+<% if @fav and @fav > 0 -%>
+favorite: <%= @fav %>
+<% end -%>
+<% if @extra -%>
+
+<%= @extra %>
+<% end -%>
+EOT
+
 class Record
-  def initialize name, url, username, password, extra, grouping, fav
-    @name, @url, @username, @password, @extra, @grouping, @fav = name, url, username, password, extra, grouping, fav
+  include ERB::Util
+  attr_accessor :url, :username, :password, :extra, :fav, :name, :grouping
+  @@unnamed_incr = 0
+
+  def initialize(h)
+    @name, @url, @username, @password, @extra, @grouping, @fav = h[:name], h[:url], h[:username], h[:password], h[:extra], h[:grouping], h[:fav]
   end
 
-  def name
+  def filename
     s = ""
-    s << @grouping + "/" unless @grouping.empty?
-    s << @name unless @name == nil
+    s << @grouping.gsub(/\\/, '/') + "/" unless @grouping.nil? or @grouping.empty?
+
+    if @name.nil?
+      @name = 'Unnamed_%s' % @@unnamed_incr
+      @@unnamed_incr += 1
+    end
+    s << @name
+
     s.gsub(/ /, "_").gsub(/'/, "")
   end
 
-  def to_s
-    s = ""
-    s << "#{@password}\n---\n"
-    s << "#{@grouping} / " unless @grouping.empty?
-    s << "#{@name}\n"
-    s << "username: #{@username}\n" unless @username.empty?
-    s << "password: #{@password}\n" unless @password.empty?
-    s << "url: #{@url}\n" unless @url == "http://sn"
-    s << "#{@extra}\n" unless @extra.nil?
-    return s
+  def to_s()
+    ERB.new(TEMPLATE, nil, '-').result(binding)
   end
 end
 
 # Extract individual records
-entries = []
-entry = ""
-begin
-  file = File.open(filename)
-  file.each do |line|
-    if line =~ /^(http|ftp|ssh)/
-      entries.push(entry)
-      entry = ""
-    end
-    entry += line
-  end
-  entries.push(entry)
-  entries.shift
-  puts "#{entries.length} records found!"
-rescue
-  puts "Couldn't find #{filename}!"
-  exit 1
-end
-
-# Parse records and create Record objects
 records = []
-entries.each do |e|
-  args = e.split(",")
-  url = args.shift
-  username = args.shift
-  password = args.shift
-  fav = args.pop
-  grouping = args.pop
-  grouping = DEFAULT_GROUP if grouping == nil
-  name = args.pop
-  extra = args.join(",")[1...-1]
-
-  records << Record.new(name, url, username, password, extra, grouping, fav)
+file = File.open(filename, "r:bom|utf-8")
+n = SmarterCSV.process(file, {:chunk_size => 2}) do |chunk|
+  chunk.each do |h|
+    h[:grouping] = DEFAULT_GROUP if h[:grouping].nil?
+    r = Record.new(h)
+    records << r
+  end
+  #puts chunk.inspect
 end
+file.close
 puts "Records parsed: #{records.length}"
 
 successful = 0
 errors = []
 records.each do |r|
-  if File.exist?("#{r.name}.gpg") and FORCE == false
-    puts "skipped #{r.name}: already exists"
+  if File.exist?("#{r.filename}.gpg") and not FORCE
+    puts "skipped #{r.filename}: already exists"
     next
   end
-  print "Creating record #{r.name}..."
-  IO.popen("pass insert -m '#{r.name}' > /dev/null", 'w') do |io|
+  print "Creating record #{r.filename}..."
+  IO.popen("pass insert -m '#{r.filename}' >/dev/null", 'w') do |io|
     io.puts r
   end
   if $? == 0
